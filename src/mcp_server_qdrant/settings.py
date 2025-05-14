@@ -15,6 +15,10 @@ DEFAULT_TOOL_FIND_DESCRIPTION = (
     " - Get some personal information about the user"
 )
 
+DEFAULT_TOOL_FIND_RECENT_DESCRIPTION = (
+    "Look up memories in Qdrant filtering by date (after_ts or days)."
+)
+
 
 class ToolSettings(BaseSettings):
     """
@@ -29,6 +33,10 @@ class ToolSettings(BaseSettings):
         default=DEFAULT_TOOL_FIND_DESCRIPTION,
         validation_alias="TOOL_FIND_DESCRIPTION",
     )
+    tool_find_recent_description: str = Field(
+        default=DEFAULT_TOOL_FIND_RECENT_DESCRIPTION,
+        validation_alias="TOOL_FIND_RECENT_DESCRIPTION",
+    )
 
 
 class EmbeddingProviderSettings(BaseSettings):
@@ -37,11 +45,11 @@ class EmbeddingProviderSettings(BaseSettings):
     """
 
     provider_type: EmbeddingProviderType = Field(
-        default=EmbeddingProviderType.FASTEMBED,
+        default=EmbeddingProviderType.OLLAMA,
         validation_alias="EMBEDDING_PROVIDER",
     )
     model_name: str = Field(
-        default="sentence-transformers/all-MiniLM-L6-v2",
+        default="bge-m3",
         validation_alias="EMBEDDING_MODEL",
     )
 

@@ -130,6 +130,40 @@ class QdrantMCPServer(FastMCP):
                 content.append(self.format_entry(entry))
             return content
 
+        async def find_recent(
+                ctx: Context,
+                query: str,
+                # opcionales ↓
+                days: int | None = None,
+                after_ts: int | None = None,
+                limit: int | None = None,
+                collection_name: str | None = None,
+        ) -> list[dict]:
+            """
+            Igual que qdrant-find, pero filtra por fecha.
+            - `days`: últimos N días.
+            - `after_ts`: epoch-ms.  Si se dan ambos, after_ts tiene prioridad.
+            - `limit`: cuántos resultados (por defecto QDRANT_SEARCH_LIMIT).
+            """
+            await ctx.debug(
+                f"find_recent query='{query}' after_ts={after_ts} days={days}"
+            )
+
+            coll = (collection_name or self.qdrant_settings.collection_name)
+            lim = limit or self.qdrant_settings.search_limit
+
+            entries = await self.qdrant_connector.search_recent(
+                query,
+                collection_name=coll,
+                limit=lim,
+                days=days,
+                after_ts=after_ts,
+            )
+            if not entries:
+                return [{"message": f"No recent information for '{query}'"}]
+
+            return [e.payload for e in entries]
+
         async def find_with_default_collection(
             ctx: Context,
             query: str,
@@ -151,6 +185,17 @@ class QdrantMCPServer(FastMCP):
                 name="qdrant-find",
                 description=self.tool_settings.tool_find_description,
             )
+
+        self.add_tool(
+            find_recent,
+            name="qdrant-find-recent",
+            description=(
+                "Look up memories in Qdrant that match `query` and were "
+                "published after `after_ts` (epoch-ms) or within the last "
+                "`days` days. Returns newest first with full payload "
+                "(title, source_url, published_date, tags…)."
+            ),
+        )
 
         if not self.qdrant_settings.read_only:
             # Those methods can modify the database

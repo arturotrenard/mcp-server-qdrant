@@ -1,6 +1,7 @@
 import logging
 import uuid
 from typing import Any, Dict, Optional
+from datetime import datetime, timedelta
 
 from pydantic import BaseModel
 from qdrant_client import AsyncQdrantClient, models
@@ -16,9 +17,9 @@ class Entry(BaseModel):
     """
     A single entry in the Qdrant collection.
     """
-
-    content: str
-    metadata: Optional[Metadata] = None
+    payload: Dict[str, Any]
+    content: Optional[str] = None
+    metadata: Optional[Dict[str, Any]] = None
 
 
 class QdrantConnector:
@@ -75,12 +76,19 @@ class QdrantConnector:
         # Add to Qdrant
         vector_name = self._embedding_provider.get_vector_name()
         payload = {"document": entry.content, "metadata": entry.metadata}
+
+        vec_field = (
+            embeddings[0]
+            if vector_name in ("", None)
+            else {vector_name: embeddings[0]}
+        )
+
         await self._client.upsert(
             collection_name=collection_name,
             points=[
                 models.PointStruct(
                     id=uuid.uuid4().hex,
-                    vector={vector_name: embeddings[0]},
+                    vector=vec_field,
                     payload=payload,
                 )
             ],
@@ -109,20 +117,30 @@ class QdrantConnector:
         query_vector = await self._embedding_provider.embed_query(query)
         vector_name = self._embedding_provider.get_vector_name()
 
+        vec_name = None if not vector_name else vector_name
+
         # Search in Qdrant
         search_results = await self._client.query_points(
             collection_name=collection_name,
             query=query_vector,
-            using=vector_name,
+            using=vec_name,
             limit=limit,
+            with_payload=True,
         )
 
-        return [
+
+
+        """return [
             Entry(
-                content=result.payload["document"],
+                content=result.payload["content"],
                 metadata=result.payload.get("metadata"),
             )
             for result in search_results.points
+        ]"""
+
+        return  [
+            Entry(payload=p.payload)
+            for p in search_results.points
         ]
 
     async def _ensure_collection_exists(self, collection_name: str):
@@ -146,3 +164,63 @@ class QdrantConnector:
                     )
                 },
             )
+
+    async def search_recent(
+            self,
+            query: str,
+            *,
+            limit: int = 5,
+            days: int | None = None,  # últimos N días
+            after_ts: int | None = None,  # timestamp (ms)
+            collection_name: str | None = None,
+    ):
+        if after_ts is None and days is not None:
+            after_ts = int(
+                (datetime.utcnow() - timedelta(days=days)).timestamp() * 1000
+            )
+
+        filt = None
+        if after_ts:
+            filt = models.Filter(
+                must=[
+                    models.FieldCondition(
+                        key="published_date",
+                        range=models.Range(gte=after_ts),
+                    )
+                ]
+            )
+
+        entries = await self._search_with_filter(
+            query=query,
+            flt=filt,
+            limit=limit,
+            coll=collection_name,
+        )
+
+        # ordena de más nuevo a más viejo
+        entries.sort(
+            key=lambda e: e.payload.get("published_date", 0),
+            reverse=True,
+        )
+        return entries
+
+    async def _search_with_filter(
+            self, query: str, coll: str | None, limit: int, flt: models.Filter
+    ) -> list[Entry]:
+
+        vec = await self._embedding_provider.embed_query(query)
+        vname = self._embedding_provider.get_vector_name() or None
+
+        res = await self._client.query_points(
+            collection_name=coll,
+            query=vec,
+            using=vname,
+            query_filter=flt,
+            limit=limit,
+            with_payload=True,
+        )
+
+        return [
+            Entry(payload=p.payload)
+            for p in res.points
+        ]

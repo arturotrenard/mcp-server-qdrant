@@ -1,21 +1,21 @@
+# Dockerfile
 FROM python:3.11-slim
-
 WORKDIR /app
 
-# Install uv for package management
-RUN pip install --no-cache-dir uv
+# 1. Copia tu fork completo
+COPY . /app
 
-# Install the mcp-server-qdrant package
-RUN uv pip install --system --no-cache-dir mcp-server-qdrant
+# 2. Instala uv y tus dependencias **en editable**
+RUN pip install --no-cache-dir uv \
+ && uv pip install --system --no-cache-dir -e .
 
-# Expose the default port for SSE transport
+# 3. Variables por defecto (se pueden sobreescribir al ejecutar)
+ENV QDRANT_URL="http://192.168.10.3:32726" \
+    QDRANT_API_KEY="" \
+    COLLECTION_NAME="news" \
+    EMBEDDING_MODEL="bge-m3" \
+    EMBEDDING_PROVIDER="ollama" \
+    OLLAMA_BASE_URL="http://192.168.10.3:31784"
+
 EXPOSE 8000
-
-# Set environment variables with defaults that can be overridden at runtime
-ENV QDRANT_URL=""
-ENV QDRANT_API_KEY=""
-ENV COLLECTION_NAME="default-collection"
-ENV EMBEDDING_MODEL="sentence-transformers/all-MiniLM-L6-v2"
-
-# Run the server with SSE transport
-CMD uvx mcp-server-qdrant --transport sse
+CMD ["mcp-server-qdrant", "--transport", "sse"]
