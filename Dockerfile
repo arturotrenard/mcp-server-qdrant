@@ -12,9 +12,10 @@ RUN pip install --no-cache-dir uv \
 # 3. Variables por defecto (se pueden sobreescribir al ejecutar)
 ENV QDRANT_URL="http://192.168.10.3:32726" \
     QDRANT_API_KEY="" \
-    COLLECTION_NAME="news" \
+    COLLECTION_NAME="code" \
     EMBEDDING_MODEL="bge-m3" \
     EMBEDDING_PROVIDER="ollama" \
+    LOG_LEVEL="DEBUG" \
     OLLAMA_BASE_URL="http://192.168.10.3:31784"
 
 EXPOSE 8000

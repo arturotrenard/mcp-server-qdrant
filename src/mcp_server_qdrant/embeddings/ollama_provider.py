@@ -28,7 +28,7 @@ class OllamaEmbedProvider(EmbeddingProvider):
         return await self._embed(query)
 
     def get_vector_name(self) -> str:
-        return ""
+        return "default"
 
     def get_vector_size(self) -> int:
         return VECTOR_DIM

@@ -1,3 +1,4 @@
+import json
 import logging
 import uuid
 from typing import Any, Dict, Optional
@@ -18,8 +19,6 @@ class Entry(BaseModel):
     A single entry in the Qdrant collection.
     """
     payload: Dict[str, Any]
-    content: Optional[str] = None
-    metadata: Optional[Dict[str, Any]] = None
 
 
 class QdrantConnector:
@@ -63,39 +62,64 @@ class QdrantConnector:
         :param entry: The entry to store in the Qdrant collection.
         :param collection_name: The name of the collection to store the information in, optional. If not provided,
                                 the default collection is used.
+        :raises ValueError: If `entry.content` is None or empty, or if the collection name is invalid.
         """
-        collection_name = collection_name or self._default_collection_name
-        assert collection_name is not None
-        await self._ensure_collection_exists(collection_name)
+        try:
+            # Validate collection name
+            collection_name = collection_name or self._default_collection_name
+            if not collection_name:
+                raise ValueError("No collection name provided and no default collection set.")
+            logger.info(f"Storing entry in collection: {collection_name}")
 
-        # Embed the document
-        # ToDo: instead of embedding text explicitly, use `models.Document`,
-        # it should unlock usage of server-side inference.
-        embeddings = await self._embedding_provider.embed_documents([entry.content])
+            # Validate entry content
+            if not entry.payload:
+                raise ValueError("Entry payload cannot be None or empty.")
+            logger.debug(f"Entry payload preview: {json.dumps(entry.payload)[:200]}...")   # Log first 100 chars to avoid excessive logs
 
-        # Add to Qdrant
-        vector_name = self._embedding_provider.get_vector_name()
-        payload = {"document": entry.content, "metadata": entry.metadata}
+            # Ensure collection exists
+            await self._ensure_collection_exists(collection_name)
+            logger.debug(f"Collection {collection_name} exists or was created successfully.")
 
-        vec_field = (
-            embeddings[0]
-            if vector_name in ("", None)
-            else {vector_name: embeddings[0]}
-        )
+            content = entry.payload.get("content")
+            if not content:
+                raise ValueError("Missing 'content' in payload to generate embeddings.")
 
-        await self._client.upsert(
-            collection_name=collection_name,
-            points=[
-                models.PointStruct(
-                    id=uuid.uuid4().hex,
-                    vector=vec_field,
-                    payload=payload,
-                )
-            ],
-        )
+            # Embed the document
+            embeddings = await self._embedding_provider.embed_documents([content])
+            if not embeddings or not embeddings[0]:
+                raise ValueError("Failed to generate embeddings for the entry content.")
+            logger.debug("Embeddings generated successfully.")
+
+            # Prepare payload and vector field
+            vector_name = self._embedding_provider.get_vector_name()
+            payload = entry.payload
+            vec_field = (
+                embeddings[0]
+                if vector_name in ("", None)
+                else {vector_name: embeddings[0]}
+            )
+            logger.debug(f"Vector field prepared with vector name: {vec_field}")
+
+            # Upsert into Qdrant
+            point_id = uuid.uuid4().hex
+            await self._client.upsert(
+                collection_name=collection_name,
+                points=[
+                    models.PointStruct(
+                        id=point_id,
+                        vector=vec_field,
+                        payload=payload,
+                    )
+                ],
+            )
+            logger.info(f"Entry stored successfully with ID: {point_id}")
+
+        except Exception as e:
+            logger.error(f"Failed to store entry: {e}", exc_info=True)
+            raise  # Re-raise the exception for the caller to handle
 
     async def search(
-        self, query: str, *, collection_name: Optional[str] = None, limit: int = 10
+            self, query: str, *, collection_name: Optional[str] = None, limit: int = 10
     ) -> list[Entry]:
         """
         Find points in the Qdrant collection. If there are no entries found, an empty list is returned.
@@ -119,6 +143,8 @@ class QdrantConnector:
 
         vec_name = None if not vector_name else vector_name
 
+        logger.debug(f"Vector field prepared with vector name: {vec_name}")
+
         # Search in Qdrant
         search_results = await self._client.query_points(
             collection_name=collection_name,
@@ -128,17 +154,7 @@ class QdrantConnector:
             with_payload=True,
         )
 
-
-
-        """return [
-            Entry(
-                content=result.payload["content"],
-                metadata=result.payload.get("metadata"),
-            )
-            for result in search_results.points
-        ]"""
-
-        return  [
+        return [
             Entry(payload=p.payload)
             for p in search_results.points
         ]
@@ -210,6 +226,8 @@ class QdrantConnector:
 
         vec = await self._embedding_provider.embed_query(query)
         vname = self._embedding_provider.get_vector_name() or None
+
+        logger.debug(f"Vector field prepared with vector name: {vname}")
 
         res = await self._client.query_points(
             collection_name=coll,

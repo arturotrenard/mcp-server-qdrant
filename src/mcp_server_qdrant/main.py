@@ -1,4 +1,6 @@
 import argparse
+import logging
+
 
 
 def main():
@@ -7,6 +9,11 @@ def main():
     in pyproject.toml. It runs the MCP server with a specific transport
     protocol.
     """
+
+    """logging.basicConfig(
+        level=logging.DEBUG,  # 👈 Esto habilita los logs debug
+        format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+    )"""
 
     # Parse the command-line arguments to determine the transport protocol.
     parser = argparse.ArgumentParser(description="mcp-server-qdrant")

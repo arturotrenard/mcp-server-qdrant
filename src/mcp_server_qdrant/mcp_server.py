@@ -49,11 +49,8 @@ class QdrantMCPServer(FastMCP):
         self.setup_tools()
 
     def format_entry(self, entry: Entry) -> str:
-        """
-        Feel free to override this method in your subclass to customize the format of the entry.
-        """
-        entry_metadata = json.dumps(entry.metadata) if entry.metadata else ""
-        return f"<entry><content>{entry.content}</content><metadata>{entry_metadata}</metadata></entry>"
+        parts = [f"{k}: {v}" for k, v in entry.payload.items()]
+        return " | ".join(parts)
 
     def setup_tools(self):
         """
@@ -61,28 +58,20 @@ class QdrantMCPServer(FastMCP):
         """
 
         async def store(
-            ctx: Context,
-            information: str,
-            collection_name: str,
-            # The `metadata` parameter is defined as non-optional, but it can be None.
-            # If we set it to be optional, some of the MCP clients, like Cursor, cannot
-            # handle the optional parameter correctly.
-            metadata: Metadata = None,  # type: ignore
+                ctx: Context,
+                information: str,
+                collection_name: str,
+                metadata: Metadata = None,
         ) -> str:
-            """
-            Store some information in Qdrant.
-            :param ctx: The context for the request.
-            :param information: The information to store.
-            :param metadata: JSON metadata to store with the information, optional.
-            :param collection_name: The name of the collection to store the information in, optional. If not provided,
-                                    the default collection is used.
-            :return: A message indicating that the information was stored.
-            """
             await ctx.debug(f"Storing information {information} in Qdrant")
 
-            entry = Entry(content=information, metadata=metadata)
+            payload = {
+                "content": information,
+            }
 
+            entry = Entry(payload=payload)
             await self.qdrant_connector.store(entry, collection_name=collection_name)
+
             if collection_name:
                 return f"Remembered: {information} in collection {collection_name}"
             return f"Remembered: {information}"
